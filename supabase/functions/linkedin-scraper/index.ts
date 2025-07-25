@@ -6,129 +6,353 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Performance optimizations
+const CONNECTION_POOL = new Map<string, any>();
+const MAX_CONCURRENT_SCRAPES = 5;
+const ADAPTIVE_DELAY_BASE = 1000;
+const MAX_RETRY_ATTEMPTS = 5;
+
+// Circuit breaker pattern
+interface CircuitBreakerState {
+  failureCount: number;
+  lastFailureTime: number;
+  state: 'closed' | 'open' | 'half-open';
+}
+
+const circuitBreakers = new Map<string, CircuitBreakerState>();
+
+function logWithContext(level: string, message: string, context: any = {}) {
+  const timestamp = new Date().toISOString();
+  console[level](`[${timestamp}] LinkedIn-Scraper: ${message}`, JSON.stringify(context));
+}
+
+function getCircuitBreakerKey(proxy?: any): string {
+  return proxy ? `${proxy.host}:${proxy.port}` : 'direct';
+}
+
+function checkCircuitBreaker(key: string): boolean {
+  const breaker = circuitBreakers.get(key);
+  if (!breaker) return true;
+  
+  const now = Date.now();
+  const timeSinceFailure = now - breaker.lastFailureTime;
+  
+  switch (breaker.state) {
+    case 'closed':
+      return true;
+    case 'open':
+      if (timeSinceFailure > 60000) { // 1 minute
+        breaker.state = 'half-open';
+        return true;
+      }
+      return false;
+    case 'half-open':
+      return true;
+    default:
+      return true;
+  }
+}
+
+function recordSuccess(key: string) {
+  const breaker = circuitBreakers.get(key) || { failureCount: 0, lastFailureTime: 0, state: 'closed' as const };
+  breaker.failureCount = 0;
+  breaker.state = 'closed';
+  circuitBreakers.set(key, breaker);
+}
+
+function recordFailure(key: string) {
+  const breaker = circuitBreakers.get(key) || { failureCount: 0, lastFailureTime: 0, state: 'closed' as const };
+  breaker.failureCount++;
+  breaker.lastFailureTime = Date.now();
+  
+  if (breaker.failureCount >= 5) {
+    breaker.state = 'open';
+    logWithContext('warn', 'Circuit breaker opened', { key, failureCount: breaker.failureCount });
+  }
+  
+  circuitBreakers.set(key, breaker);
+}
+
 serve(async (req) => {
+  const startTime = Date.now();
+  
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { url } = await req.json();
+    const { url, urls, batchMode = false } = await req.json();
     
-    if (!url) {
+    if (!url && !batchMode) {
       return new Response(
         JSON.stringify({ error: 'LinkedIn URL is required' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
       );
     }
 
-    console.log(`Starting scrape for: ${url}`);
-
-    // Get optimal proxy for this request
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    const { data: proxyData } = await supabase.functions.invoke('proxy-manager', {
-      body: { action: 'get_optimal_proxy' }
-    });
+    let result;
+    
+    if (batchMode && urls?.length > 0) {
+      logWithContext('info', 'Starting batch scrape', { urlCount: urls.length });
+      result = await processBatchScraping(urls, supabase);
+    } else {
+      logWithContext('info', 'Starting single scrape', { url });
+      
+      // Get optimal proxy for this request
+      const { data: proxyData } = await supabase.functions.invoke('proxy-manager', {
+        body: { action: 'get_optimal_proxy' }
+      });
 
-    // Advanced scraping with Playwright-like approach
-    const profileData = await scrapeWithRetry(url, proxyData?.proxy);
+      const circuitBreakerKey = getCircuitBreakerKey(proxyData?.proxy);
+      
+      // Check circuit breaker
+      if (!checkCircuitBreaker(circuitBreakerKey)) {
+        logWithContext('warn', 'Circuit breaker is open, skipping request', { circuitBreakerKey });
+        return new Response(
+          JSON.stringify({ success: false, error: 'Service temporarily unavailable' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 503 }
+        );
+      }
 
-    if (profileData.error) {
-      // Update proxy stats if proxy failed
+      // Advanced scraping with enhanced retry logic
+      const profileData = await scrapeWithRetry(url, proxyData?.proxy);
+
+      if (profileData.error) {
+        recordFailure(circuitBreakerKey);
+        
+        // Update proxy stats if proxy failed
+        if (proxyData?.proxy) {
+          await supabase.functions.invoke('proxy-manager', {
+            body: { 
+              action: 'report_failure', 
+              proxyId: proxyData.proxy.id,
+              error: profileData.error
+            }
+          });
+        }
+
+        return new Response(
+          JSON.stringify({ success: false, error: profileData.error }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 422 }
+        );
+      }
+
+      recordSuccess(circuitBreakerKey);
+      
+      // Update proxy stats on success
       if (proxyData?.proxy) {
         await supabase.functions.invoke('proxy-manager', {
           body: { 
-            action: 'report_failure', 
-            proxyId: proxyData.proxy.id,
-            error: profileData.error
+            action: 'report_success', 
+            proxyId: proxyData.proxy.id 
           }
         });
       }
 
-      return new Response(
-        JSON.stringify({ success: false, error: profileData.error }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 422 }
-      );
-    }
-
-    // Update proxy stats on success
-    if (proxyData?.proxy) {
-      await supabase.functions.invoke('proxy-manager', {
-        body: { 
-          action: 'report_success', 
-          proxyId: proxyData.proxy.id 
-        }
-      });
-    }
-
-    console.log(`Successfully scraped: ${url}`);
-
-    return new Response(
-      JSON.stringify({ 
+      result = { 
         success: true, 
         profile: profileData,
-        proxyUsed: proxyData?.proxy?.host || 'direct'
-      }),
+        proxyUsed: proxyData?.proxy?.host || 'direct',
+        processingTime: Date.now() - startTime
+      };
+    }
+
+    const processingTime = Date.now() - startTime;
+    logWithContext('info', 'Scraping completed', { 
+      processingTime, 
+      batchMode, 
+      urlCount: batchMode ? urls?.length : 1 
+    });
+
+    return new Response(
+      JSON.stringify(result),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error) {
-    console.error('LinkedIn scraper error:', error);
+    const processingTime = Date.now() - startTime;
+    logWithContext('error', 'LinkedIn scraper error', { 
+      error: error.message, 
+      processingTime,
+      stack: error.stack 
+    });
+    
     return new Response(
       JSON.stringify({ 
         success: false, 
-        error: error.message || 'Internal server error' 
+        error: error.message || 'Internal server error',
+        processingTime
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
     );
   }
 });
 
-async function scrapeWithRetry(url: string, proxy?: any, maxRetries = 3): Promise<any> {
+// Batch processing for multiple URLs
+async function processBatchScraping(urls: string[], supabase: any): Promise<any> {
+  const results = [];
+  const concurrentLimit = Math.min(MAX_CONCURRENT_SCRAPES, urls.length);
+  
+  // Process URLs in concurrent batches
+  for (let i = 0; i < urls.length; i += concurrentLimit) {
+    const batch = urls.slice(i, i + concurrentLimit);
+    
+    const batchPromises = batch.map(async (url) => {
+      try {
+        const { data: proxyData } = await supabase.functions.invoke('proxy-manager', {
+          body: { action: 'get_optimal_proxy' }
+        });
+        
+        const profileData = await scrapeWithRetry(url, proxyData?.proxy);
+        
+        return {
+          url,
+          success: !profileData.error,
+          profile: profileData.error ? null : profileData,
+          error: profileData.error || null,
+          proxyUsed: proxyData?.proxy?.host || 'direct'
+        };
+      } catch (error) {
+        logWithContext('error', 'Batch scraping failed for URL', { url, error: error.message });
+        return {
+          url,
+          success: false,
+          profile: null,
+          error: error.message,
+          proxyUsed: null
+        };
+      }
+    });
+    
+    const batchResults = await Promise.allSettled(batchPromises);
+    batchResults.forEach(result => {
+      if (result.status === 'fulfilled') {
+        results.push(result.value);
+      } else {
+        results.push({
+          url: 'unknown',
+          success: false,
+          profile: null,
+          error: result.reason.message || 'Batch processing failed',
+          proxyUsed: null
+        });
+      }
+    });
+    
+    // Adaptive delay between batches based on success rate
+    if (i + concurrentLimit < urls.length) {
+      const successRate = results.filter(r => r.success).length / results.length;
+      const adaptiveDelay = ADAPTIVE_DELAY_BASE * (1 + (1 - successRate));
+      await new Promise(resolve => setTimeout(resolve, adaptiveDelay));
+    }
+  }
+  
+  return {
+    success: true,
+    results,
+    summary: {
+      total: urls.length,
+      successful: results.filter(r => r.success).length,
+      failed: results.filter(r => !r.success).length,
+      successRate: results.filter(r => r.success).length / urls.length
+    }
+  };
+}
+
+async function scrapeWithRetry(url: string, proxy?: any, maxRetries = MAX_RETRY_ATTEMPTS): Promise<any> {
   let lastError = null;
+  const startTime = Date.now();
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      console.log(`Scraping attempt ${attempt}/${maxRetries} for ${url}`);
+      logWithContext('info', 'Scraping attempt', { attempt, maxRetries, url });
       
-      // Simulate browser-like scraping with varying delays
-      const delay = Math.random() * 2000 + 1000 + (attempt * 500);
+      // Adaptive delay based on attempt and proxy performance
+      const baseDelay = ADAPTIVE_DELAY_BASE;
+      const attemptMultiplier = Math.pow(1.5, attempt - 1);
+      const jitter = Math.random() * 500;
+      const delay = baseDelay * attemptMultiplier + jitter;
+      
       await new Promise(resolve => setTimeout(resolve, delay));
 
-      // Enhanced scraping logic that extracts more detailed information
-      const profileData = await performActualScraping(url, proxy);
+      // Enhanced scraping with timeout
+      const profileData = await Promise.race([
+        performActualScraping(url, proxy),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Scraping timeout')), 15000)
+        )
+      ]) as any;
       
       if (profileData && !profileData.error) {
-        return profileData;
+        const processingTime = Date.now() - startTime;
+        logWithContext('info', 'Scraping successful', { 
+          url, 
+          attempt, 
+          processingTime,
+          proxy: proxy?.host || 'direct'
+        });
+        return {
+          ...profileData,
+          scrapingMetadata: {
+            ...profileData.scrapingMetadata,
+            attemptsUsed: attempt,
+            totalProcessingTime: processingTime
+          }
+        };
       }
 
       lastError = profileData?.error || 'Unknown scraping error';
       
-      // Categorize error for intelligent retry
+      // Enhanced error categorization
       const errorCategory = categorizeError(lastError);
       
       if (errorCategory === 'permanent') {
-        console.log(`Permanent error detected for ${url}: ${lastError}`);
+        logWithContext('warn', 'Permanent error detected', { url, error: lastError });
         break;
       }
 
-      // Exponential backoff with jitter for temporary errors
+      // Smart backoff strategy
       if (attempt < maxRetries) {
-        const backoffTime = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
-        console.log(`Retrying in ${backoffTime}ms due to: ${lastError}`);
+        const backoffTime = calculateBackoffTime(attempt, errorCategory);
+        logWithContext('info', 'Retrying after backoff', { 
+          url, 
+          attempt, 
+          backoffTime, 
+          errorCategory, 
+          error: lastError 
+        });
         await new Promise(resolve => setTimeout(resolve, backoffTime));
       }
 
     } catch (error) {
       lastError = error.message;
-      console.error(`Attempt ${attempt} failed:`, error);
+      logWithContext('error', 'Scraping attempt failed', { url, attempt, error: error.message });
     }
   }
 
+  const totalTime = Date.now() - startTime;
+  logWithContext('error', 'All scraping attempts failed', { 
+    url, 
+    totalAttempts: maxRetries, 
+    totalTime, 
+    finalError: lastError 
+  });
+  
   return { error: lastError || 'All retry attempts failed' };
+}
+
+function calculateBackoffTime(attempt: number, errorCategory: string): number {
+  const baseTime = 1000;
+  const multiplier = errorCategory === 'rate_limit' ? 3 : 2;
+  const exponential = Math.pow(multiplier, attempt);
+  const jitter = Math.random() * 1000;
+  
+  return Math.min(baseTime * exponential + jitter, 30000); // Cap at 30 seconds
 }
 
 function categorizeError(error: string): 'temporary' | 'permanent' | 'rate_limit' {

@@ -7,7 +7,40 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Enhanced logging utility
+function logWithContext(level: string, message: string, context: any = {}) {
+  const timestamp = new Date().toISOString();
+  console[level](`[${timestamp}] ${message}`, JSON.stringify(context));
+}
+
+// Input validation schema
+function validateJobManagementRequest(body: any): { isValid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  
+  if (!body) {
+    errors.push('Request body is required');
+    return { isValid: false, errors };
+  }
+  
+  if (!body.action || typeof body.action !== 'string') {
+    errors.push('Action is required and must be a string');
+  }
+  
+  if (!body.jobId || typeof body.jobId !== 'string') {
+    errors.push('Job ID is required and must be a string');
+  }
+  
+  const validActions = ['pause', 'resume', 'cancel', 'retry'];
+  if (body.action && !validActions.includes(body.action)) {
+    errors.push(`Invalid action. Must be one of: ${validActions.join(', ')}`);
+  }
+  
+  return { isValid: errors.length === 0, errors };
+}
+
 serve(async (req) => {
+  const startTime = Date.now();
+  
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -20,22 +53,53 @@ serve(async (req) => {
 
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
+      logWithContext('error', 'Missing authorization header', { userAgent: req.headers.get('User-Agent') });
       throw new Error('No authorization header');
     }
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser(
-      authHeader.replace('Bearer ', '')
-    );
-    
-    if (authError || !user) {
-      throw new Error('Unauthorized');
+    // Enhanced auth validation with better error handling
+    let user;
+    try {
+      const token = authHeader.replace('Bearer ', '');
+      if (!token || token.length < 10) {
+        throw new Error('Invalid token format');
+      }
+      
+      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser(token);
+      
+      if (authError) {
+        logWithContext('error', 'Auth error', { error: authError.message, token: token.substring(0, 10) + '...' });
+        throw new Error(`Authentication failed: ${authError.message}`);
+      }
+      
+      if (!authUser) {
+        throw new Error('User not found');
+      }
+      
+      user = authUser;
+      logWithContext('info', 'User authenticated', { userId: user.id });
+    } catch (error) {
+      logWithContext('error', 'Authentication failed', { error: error.message });
+      throw new Error(`Unauthorized: ${error.message}`);
     }
 
-    const { action, jobId } = await req.json();
-    
-    if (!action || !jobId) {
-      throw new Error('Action and job ID are required');
+    // Parse and validate request body
+    let requestBody;
+    try {
+      requestBody = await req.json();
+    } catch (error) {
+      logWithContext('error', 'Invalid JSON in request body', { error: error.message });
+      throw new Error('Invalid JSON in request body');
     }
+    
+    // Validate input
+    const validation = validateJobManagementRequest(requestBody);
+    if (!validation.isValid) {
+      logWithContext('error', 'Request validation failed', { errors: validation.errors, body: requestBody });
+      throw new Error(`Validation failed: ${validation.errors.join(', ')}`);
+    }
+    
+    const { action, jobId } = requestBody;
 
     // Verify job ownership
     const { data: job, error: jobError } = await supabase
@@ -143,11 +207,20 @@ serve(async (req) => {
       throw new Error('Failed to update job');
     }
 
+    const processingTime = Date.now() - startTime;
+    logWithContext('info', 'Job management completed', { 
+      action, 
+      jobId, 
+      processingTime,
+      userId: user.id 
+    });
+
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message,
-        jobId 
+        message: `Job ${action} completed successfully`,
+        jobId,
+        processingTime
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -155,15 +228,38 @@ serve(async (req) => {
       }
     );
   } catch (error) {
-    console.error('Error in manage-job function:', error);
+    const processingTime = Date.now() - startTime;
+    logWithContext('error', 'Job management failed', { 
+      error: error.message, 
+      processingTime,
+      stack: error.stack 
+    });
+    
+    // Determine appropriate status code based on error type
+    let statusCode = 500;
+    if (error.message.includes('Validation failed') || 
+        error.message.includes('Action and job ID are required') ||
+        error.message.includes('Invalid action')) {
+      statusCode = 400;
+    } else if (error.message.includes('Unauthorized') || 
+               error.message.includes('Authentication failed')) {
+      statusCode = 401;
+    } else if (error.message.includes('Job not found')) {
+      statusCode = 404;
+    } else if (error.message.includes('Can only')) {
+      statusCode = 409; // Conflict
+    }
+    
     return new Response(
       JSON.stringify({ 
         success: false, 
-        error: error.message 
+        error: error.message,
+        timestamp: new Date().toISOString(),
+        processingTime
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400,
+        status: statusCode,
       }
     );
   }

@@ -9,15 +9,81 @@ const corsHeaders = {
 
 const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
 
+// Enhanced cache for AI responses (using Map for simplicity, Redis would be better for production)
+const enhancementCache = new Map<string, any>();
+const CACHE_TTL = 1000 * 60 * 60 * 24; // 24 hours
+const MAX_CACHE_SIZE = 1000;
+
+// Batch processing configuration
+const BATCH_SIZE = 5;
+const MAX_PARALLEL_REQUESTS = 3;
+
+// Performance monitoring
+interface PerformanceMetrics {
+  totalRequests: number;
+  cacheHits: number;
+  cacheMisses: number;
+  averageProcessingTime: number;
+  openAIApiCalls: number;
+}
+
+const metrics: PerformanceMetrics = {
+  totalRequests: 0,
+  cacheHits: 0,
+  cacheMisses: 0,
+  averageProcessingTime: 0,
+  openAIApiCalls: 0,
+};
+
+function logWithContext(level: string, message: string, context: any = {}) {
+  const timestamp = new Date().toISOString();
+  console[level](`[${timestamp}] AI-Enhancer: ${message}`, JSON.stringify(context));
+}
+
+function getCacheKey(profileData: any): string {
+  // Create a simple hash key from profile data
+  const keyData = {
+    name: profileData.name,
+    title: profileData.title,
+    skills: profileData.skills,
+    experience: profileData.experience?.length || 0
+  };
+  return btoa(JSON.stringify(keyData)).substring(0, 32);
+}
+
+function cleanCache() {
+  if (enhancementCache.size > MAX_CACHE_SIZE) {
+    const entries = Array.from(enhancementCache.entries());
+    const oldEntries = entries.filter(([_, data]) => 
+      Date.now() - data.timestamp > CACHE_TTL
+    );
+    
+    // Remove old entries
+    oldEntries.forEach(([key, _]) => enhancementCache.delete(key));
+    
+    // If still too large, remove oldest entries
+    if (enhancementCache.size > MAX_CACHE_SIZE) {
+      const remainingEntries = Array.from(enhancementCache.entries())
+        .sort(([_, a], [__, b]) => a.timestamp - b.timestamp);
+      
+      const toRemove = remainingEntries.slice(0, enhancementCache.size - MAX_CACHE_SIZE + 100);
+      toRemove.forEach(([key, _]) => enhancementCache.delete(key));
+    }
+  }
+}
+
 serve(async (req) => {
+  const startTime = Date.now();
+  metrics.totalRequests++;
+  
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { profileData, url } = await req.json();
+    const { profileData, url, batchMode = false, profiles = [] } = await req.json();
 
-    if (!profileData) {
+    if (!profileData && !batchMode) {
       return new Response(
         JSON.stringify({ error: 'Profile data is required' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
@@ -25,58 +91,182 @@ serve(async (req) => {
     }
 
     if (!openAIApiKey) {
-      console.warn('OpenAI API key not configured, returning original data');
+      logWithContext('warn', 'OpenAI API key not configured, returning original data');
+      const fallbackData = batchMode ? profiles.map(p => ({ enhancedProfile: p })) : { enhancedProfile: profileData };
       return new Response(
-        JSON.stringify({ enhancedProfile: profileData }),
+        JSON.stringify(fallbackData),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log(`Enhancing profile data for: ${url}`);
+    // Clean cache periodically
+    cleanCache();
 
-    // Enhance profile data with AI
-    const enhancedProfile = await enhanceProfileWithAI(profileData);
+    let result;
+    
+    if (batchMode && profiles?.length > 0) {
+      logWithContext('info', 'Processing batch enhancement', { batchSize: profiles.length, url });
+      result = await processBatchEnhancement(profiles);
+    } else {
+      logWithContext('info', 'Processing single enhancement', { url });
+      
+      // Check cache first
+      const cacheKey = getCacheKey(profileData);
+      const cachedResult = enhancementCache.get(cacheKey);
+      
+      if (cachedResult && Date.now() - cachedResult.timestamp < CACHE_TTL) {
+        metrics.cacheHits++;
+        logWithContext('info', 'Cache hit', { cacheKey, url });
+        
+        const processingTime = Date.now() - startTime;
+        return new Response(
+          JSON.stringify({
+            enhancedProfile: {
+              ...cachedResult.data,
+              aiProcessingMetadata: {
+                ...cachedResult.data.aiProcessingMetadata,
+                cacheHit: true,
+                processingTime
+              }
+            }
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      metrics.cacheMisses++;
+      
+      // Process with timeout
+      const enhancedProfile = await Promise.race([
+        enhanceProfileWithAI(profileData),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Enhancement timeout')), 15000)
+        )
+      ]) as any;
 
-    // Validate and clean the enhanced data
-    const validatedProfile = await validateProfileData(enhancedProfile);
+      // Validate and clean the enhanced data
+      const validatedProfile = await validateProfileData(enhancedProfile);
 
-    // Calculate quality score
-    const qualityScore = calculateDataQuality(validatedProfile);
+      // Calculate quality score
+      const qualityScore = calculateDataQuality(validatedProfile);
+
+      const finalProfile = {
+        ...validatedProfile,
+        aiProcessingMetadata: {
+          processedAt: new Date().toISOString(),
+          qualityScore,
+          enhancementsApplied: [
+            'skills_standardization',
+            'experience_enrichment',
+            'data_validation',
+            'sentiment_analysis'
+          ],
+          cacheHit: false,
+          processingTime: Date.now() - startTime
+        }
+      };
+
+      // Cache the result
+      enhancementCache.set(cacheKey, {
+        data: finalProfile,
+        timestamp: Date.now()
+      });
+
+      result = { enhancedProfile: finalProfile };
+    }
+
+    const processingTime = Date.now() - startTime;
+    metrics.averageProcessingTime = (metrics.averageProcessingTime * (metrics.totalRequests - 1) + processingTime) / metrics.totalRequests;
+    
+    logWithContext('info', 'Enhancement completed', { 
+      processingTime, 
+      cacheHitRate: metrics.cacheHits / (metrics.cacheHits + metrics.cacheMisses),
+      url 
+    });
 
     return new Response(
-      JSON.stringify({
-        enhancedProfile: {
-          ...validatedProfile,
-          aiProcessingMetadata: {
-            processedAt: new Date().toISOString(),
-            qualityScore,
-            enhancementsApplied: [
-              'skills_standardization',
-              'experience_enrichment',
-              'data_validation',
-              'sentiment_analysis'
-            ]
-          }
-        }
-      }),
+      JSON.stringify(result),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error) {
-    console.error('AI enhancer error:', error);
+    const processingTime = Date.now() - startTime;
+    logWithContext('error', 'AI enhancement failed', { 
+      error: error.message, 
+      processingTime,
+      stack: error.stack 
+    });
+    
     return new Response(
       JSON.stringify({ 
         error: error.message || 'AI enhancement failed',
-        fallbackProfile: req.body?.profileData || null
+        fallbackProfile: req.body?.profileData || null,
+        processingTime
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
     );
   }
 });
 
+// Batch processing for multiple profiles
+async function processBatchEnhancement(profiles: any[]): Promise<any> {
+  const results = [];
+  const batches = [];
+  
+  // Split into batches
+  for (let i = 0; i < profiles.length; i += BATCH_SIZE) {
+    batches.push(profiles.slice(i, i + BATCH_SIZE));
+  }
+  
+  // Process batches with limited concurrency
+  for (let i = 0; i < batches.length; i += MAX_PARALLEL_REQUESTS) {
+    const batchPromises = batches.slice(i, i + MAX_PARALLEL_REQUESTS).map(batch =>
+      processBatch(batch)
+    );
+    
+    const batchResults = await Promise.allSettled(batchPromises);
+    batchResults.forEach(result => {
+      if (result.status === 'fulfilled') {
+        results.push(...result.value);
+      } else {
+        logWithContext('error', 'Batch processing failed', { error: result.reason });
+      }
+    });
+  }
+  
+  return { enhancedProfiles: results };
+}
+
+async function processBatch(profiles: any[]): Promise<any[]> {
+  return Promise.all(profiles.map(async (profile) => {
+    try {
+      const enhanced = await enhanceProfileWithAI(profile);
+      const validated = await validateProfileData(enhanced);
+      const qualityScore = calculateDataQuality(validated);
+      
+      return {
+        ...validated,
+        aiProcessingMetadata: {
+          processedAt: new Date().toISOString(),
+          qualityScore,
+          enhancementsApplied: ['batch_processing'],
+          batchMode: true
+        }
+      };
+    } catch (error) {
+      logWithContext('error', 'Individual profile enhancement failed', { error: error.message });
+      return profile; // Return original on error
+    }
+  }));
+}
+
 async function enhanceProfileWithAI(profileData: any): Promise<any> {
+  const enhancementStart = Date.now();
+  
   try {
     const prompt = createEnhancementPrompt(profileData);
+    
+    metrics.openAIApiCalls++;
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -125,36 +315,54 @@ async function enhanceProfileWithAI(profileData: any): Promise<any> {
             content: prompt
           }
         ],
-        temperature: 0.3,
-        max_tokens: 2000
+        temperature: 0.2, // Lower temperature for more consistent results
+        max_tokens: 1500, // Reduced for better performance
+        timeout: 10000 // 10 second timeout
       }),
     });
 
     if (!response.ok) {
-      throw new Error(`OpenAI API error: ${response.status}`);
+      const errorText = await response.text();
+      throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
     const enhancedContent = data.choices[0].message.content;
 
-    // Parse the AI response, handling potential JSON formatting issues
+    // Parse the AI response with better error handling
     let enhancedData;
     try {
-      enhancedData = JSON.parse(enhancedContent);
+      // Remove potential markdown formatting
+      const cleanContent = enhancedContent.replace(/```json\n?|\n?```/g, '').trim();
+      enhancedData = JSON.parse(cleanContent);
     } catch (parseError) {
-      console.warn('Failed to parse AI response as JSON, using original data');
+      logWithContext('warn', 'Failed to parse AI response as JSON', { 
+        error: parseError.message, 
+        content: enhancedContent.substring(0, 200) 
+      });
       enhancedData = profileData;
     }
+
+    const processingTime = Date.now() - enhancementStart;
+    logWithContext('info', 'AI enhancement completed', { 
+      processingTime,
+      tokensUsed: data.usage?.total_tokens || 0
+    });
 
     // Merge enhanced data with original data, preserving original fields
     return {
       ...profileData,
       ...enhancedData,
-      originalData: profileData // Keep reference to original
+      originalData: profileData, // Keep reference to original
+      aiEnhancementTime: processingTime
     };
 
   } catch (error) {
-    console.error('AI enhancement failed:', error);
+    const processingTime = Date.now() - enhancementStart;
+    logWithContext('error', 'AI enhancement failed', { 
+      error: error.message, 
+      processingTime 
+    });
     return profileData; // Return original data if AI enhancement fails
   }
 }
