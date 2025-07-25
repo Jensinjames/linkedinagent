@@ -54,47 +54,83 @@ serve(async (req) => {
 
     switch (action) {
       case 'pause':
+        // Can only pause running jobs
         if (job.status !== 'running') {
           throw new Error('Can only pause running jobs');
         }
-        updateData = { status: 'paused' };
-        message = 'Job paused successfully';
+        
+        updateData.status = 'paused';
         break;
-
+        
       case 'resume':
+        // Can only resume paused jobs
         if (job.status !== 'paused') {
           throw new Error('Can only resume paused jobs');
         }
-        updateData = { status: 'running' };
-        message = 'Job resumed successfully';
+        
+        updateData.status = 'running';
+        updateData.started_at = new Date().toISOString();
+        
+        // Resume processing by calling process-file function
+        try {
+          const { error: processError } = await supabase.functions.invoke('process-file', {
+            body: { 
+              fileId: job.input_file_id,
+              jobName: job.name,
+              resumeJobId: job.id
+            }
+          });
+          
+          if (processError) {
+            console.warn('Failed to resume job processing:', processError);
+          }
+        } catch (resumeError) {
+          console.warn('Failed to trigger job resume:', resumeError);
+        }
         break;
-
+        
       case 'cancel':
-        if (!['running', 'paused', 'queued'].includes(job.status)) {
+        // Cannot cancel completed or failed jobs
+        if (job.status === 'completed' || job.status === 'failed') {
           throw new Error('Cannot cancel completed or failed jobs');
         }
-        updateData = { 
-          status: 'failed',
-          error_message: 'Job cancelled by user',
-          completed_at: new Date().toISOString()
-        };
-        message = 'Job cancelled successfully';
+        
+        updateData.status = 'cancelled';
+        updateData.completed_at = new Date().toISOString();
         break;
-
+        
       case 'retry':
-        if (job.status !== 'failed') {
-          throw new Error('Can only retry failed jobs');
+        // Can only retry failed or cancelled jobs
+        if (job.status !== 'failed' && job.status !== 'cancelled') {
+          throw new Error('Can only retry failed or cancelled jobs');
         }
-        updateData = { 
-          status: 'queued',
-          error_message: null,
-          retry_count: (job.retry_count || 0) + 1
-        };
-        message = 'Job queued for retry';
+        
+        updateData.status = 'queued';
+        updateData.retry_count = (job.retry_count || 0) + 1;
+        updateData.error_message = null;
+        updateData.progress = 0;
+        updateData.processed_urls = 0;
+        
+        // Restart processing
+        try {
+          const { error: processError } = await supabase.functions.invoke('process-file', {
+            body: { 
+              fileId: job.input_file_id,
+              jobName: job.name,
+              retryJobId: job.id
+            }
+          });
+          
+          if (processError) {
+            console.warn('Failed to retry job processing:', processError);
+          }
+        } catch (retryError) {
+          console.warn('Failed to trigger job retry:', retryError);
+        }
         break;
-
+        
       default:
-        throw new Error('Invalid action');
+        throw new Error('Invalid action. Supported actions: pause, resume, cancel, retry');
     }
 
     const { error: updateError } = await supabase

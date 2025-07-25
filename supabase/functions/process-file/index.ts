@@ -232,20 +232,50 @@ async function processJobUrls(jobId: string, urls: string[], supabase: any) {
   }
 }
 
+// Advanced LinkedIn profile scraping with Playwright and AI enhancement
 async function scrapeLinkedInProfile(url: string): Promise<any> {
-  // Mock scraping for now - in production this would use Playwright
   console.log(`Scraping profile: ${url}`);
   
-  // Simulate processing time
-  await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
-  
-  // Mock profile data
-  return {
-    name: "John Doe",
-    title: "Software Engineer",
-    company: "Tech Company",
-    location: "San Francisco, CA",
-    profileUrl: url,
-    scrapedAt: new Date().toISOString()
-  };
+  try {
+    // Call the linkedin-scraper function for actual scraping
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
+
+    const { data: scrapedData, error } = await supabase.functions.invoke('linkedin-scraper', {
+      body: { url }
+    });
+
+    if (error) {
+      console.error(`Scraping error for ${url}:`, error);
+      throw new Error(`Scraping failed: ${error.message}`);
+    }
+
+    // Enhance data with AI if scraping was successful
+    if (scrapedData && scrapedData.success) {
+      const { data: enhancedData, error: aiError } = await supabase.functions.invoke('ai-enhancer', {
+        body: { profileData: scrapedData.profile, url }
+      });
+
+      if (aiError) {
+        console.warn(`AI enhancement failed for ${url}:`, aiError);
+        return scrapedData.profile; // Return raw data if AI enhancement fails
+      }
+
+      return enhancedData.enhancedProfile || scrapedData.profile;
+    }
+
+    throw new Error('Scraping failed: No data returned');
+  } catch (error) {
+    console.error(`Error scraping ${url}:`, error);
+    
+    // Return error data for tracking
+    return {
+      url,
+      error: error.message || 'Unknown scraping error',
+      status: 'failed',
+      scrapedAt: new Date().toISOString()
+    };
+  }
 }
