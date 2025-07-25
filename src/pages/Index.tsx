@@ -1,14 +1,35 @@
-import { useState } from "react";
+import { useState, memo, useCallback, lazy, Suspense } from "react";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { MobileMenu } from "@/components/ui/mobile-menu";
 import { SkipLink } from "@/components/layout/SkipLink";
 import { StatsCards } from "@/components/dashboard/StatsCards";
-import { FileUpload } from "@/components/upload/FileUpload";
-import { JobsTable } from "@/components/jobs/JobsTable";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Card, CardContent } from "@/components/ui/card";
+
+// Lazy load heavy components
+const FileUpload = lazy(() => import("@/components/upload/FileUpload").then(module => ({ default: module.FileUpload })));
+const JobsTable = lazy(() => import("@/components/jobs/JobsTable").then(module => ({ default: module.JobsTable })));
+
+const ComponentSkeleton = () => (
+  <Card className="border-card-border">
+    <CardContent className="pt-6">
+      <div className="space-y-4">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-3/4" />
+        <Skeleton className="h-32 w-full" />
+      </div>
+    </CardContent>
+  </Card>
+);
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState("dashboard");
+
+  const handleTabChange = useCallback((tab: string) => {
+    setActiveTab(tab);
+  }, []);
 
   const renderContent = () => {
     switch (activeTab) {
@@ -34,7 +55,9 @@ const Index = () => {
                 Upload Excel files containing LinkedIn profile URLs for processing
               </p>
             </div>
-            <FileUpload />
+            <Suspense fallback={<ComponentSkeleton />}>
+              <FileUpload />
+            </Suspense>
           </div>
         );
       case "jobs":
@@ -46,7 +69,9 @@ const Index = () => {
                 Manage and monitor your extraction jobs
               </p>
             </div>
-            <JobsTable />
+            <Suspense fallback={<ComponentSkeleton />}>
+              <JobsTable />
+            </Suspense>
           </div>
         );
       case "results":
@@ -102,7 +127,7 @@ const Index = () => {
       <div className="min-h-screen flex w-full bg-background">
         {/* Desktop Sidebar */}
         <div className="hidden md:block">
-          <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
+          <Sidebar activeTab={activeTab} onTabChange={handleTabChange} />
         </div>
         
         <main id="main-content" className="flex-1 overflow-auto" tabIndex={-1}>
@@ -117,7 +142,7 @@ const Index = () => {
                 <p className="text-xs text-muted-foreground" aria-label="Application subtitle">Profile Extraction</p>
               </div>
             </div>
-            <MobileMenu activeTab={activeTab} onTabChange={setActiveTab} />
+            <MobileMenu activeTab={activeTab} onTabChange={handleTabChange} />
           </header>
           
           <div className="p-4 md:p-6">

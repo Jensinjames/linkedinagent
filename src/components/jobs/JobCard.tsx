@@ -21,6 +21,8 @@ import {
   Users,
 } from "lucide-react";
 import { type Job } from "@/hooks/useJobs";
+import { memo, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 
 interface JobCardProps {
   job: Job;
@@ -28,8 +30,9 @@ interface JobCardProps {
   onExportResults: (jobId: string) => void;
 }
 
-export const JobCard = ({ job, onManageJob, onExportResults }: JobCardProps) => {
-  const getStatusBadge = (status: Job["status"]) => {
+export const JobCard = memo(({ job, onManageJob, onExportResults }: JobCardProps) => {
+  const navigate = useNavigate();
+  const getStatusBadge = useCallback((status: Job["status"]) => {
     const variants = {
       running: { variant: "default" as const, label: "Running" },
       completed: { variant: "outline" as const, label: "Completed" },
@@ -44,16 +47,20 @@ export const JobCard = ({ job, onManageJob, onExportResults }: JobCardProps) => 
         {config.label}
       </Badge>
     );
-  };
+  }, []);
 
-  const formatDate = (dateString: string) => {
+  const formatDate = useCallback((dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",
     });
-  };
+  }, []);
+
+  const handleViewResults = useCallback(() => {
+    navigate(`/results/${job.id}`);
+  }, [navigate, job.id]);
 
   return (
     <Card className="border-card-border">
@@ -81,9 +88,12 @@ export const JobCard = ({ job, onManageJob, onExportResults }: JobCardProps) => 
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="bg-background border border-border">
-                  <DropdownMenuItem className="gap-2">
+                  <DropdownMenuItem 
+                    className="gap-2"
+                    onClick={handleViewResults}
+                  >
                     <Eye className="h-4 w-4" />
-                    View Details
+                    View Results
                   </DropdownMenuItem>
                   {job.status === "running" && (
                     <DropdownMenuItem 
@@ -169,4 +179,4 @@ export const JobCard = ({ job, onManageJob, onExportResults }: JobCardProps) => 
       </CardContent>
     </Card>
   );
-};
+});

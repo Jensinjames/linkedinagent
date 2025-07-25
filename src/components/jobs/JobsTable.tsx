@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -30,11 +31,37 @@ import {
 } from "lucide-react";
 import { useJobs, type Job } from "@/hooks/useJobs";
 import { JobCard } from "./JobCard";
+import { memo, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 
-export const JobsTable = () => {
+const JobsTableSkeleton = () => (
+  <Card className="border-card-border">
+    <CardHeader>
+      <Skeleton className="h-6 w-48" />
+      <Skeleton className="h-4 w-64" />
+    </CardHeader>
+    <CardContent>
+      <div className="space-y-4">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-6 w-16" />
+            </div>
+            <Skeleton className="h-2 w-full" />
+            <Skeleton className="h-4 w-24" />
+          </div>
+        ))}
+      </div>
+    </CardContent>
+  </Card>
+);
+
+export const JobsTable = memo(() => {
   const { jobs, loading, manageJob, exportResults } = useJobs();
+  const navigate = useNavigate();
 
-  const getStatusBadge = (status: Job["status"]) => {
+  const getStatusBadge = useCallback((status: Job["status"]) => {
     const variants = {
       running: { variant: "default" as const, label: "Running" },
       completed: { variant: "outline" as const, label: "Completed" },
@@ -49,25 +76,23 @@ export const JobsTable = () => {
         {config.label}
       </Badge>
     );
-  };
+  }, []);
 
-  const formatDate = (dateString: string) => {
+  const formatDate = useCallback((dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",
     });
-  };
+  }, []);
+
+  const handleViewResults = useCallback((jobId: string) => {
+    navigate(`/results/${jobId}`);
+  }, [navigate]);
 
   if (loading) {
-    return (
-      <Card className="border-card-border">
-        <CardContent className="flex items-center justify-center py-8">
-          <Loader2 className="h-8 w-8 animate-spin" />
-        </CardContent>
-      </Card>
-    );
+    return <JobsTableSkeleton />;
   }
 
   return (
@@ -158,9 +183,12 @@ export const JobsTable = () => {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="bg-background border border-border">
-                            <DropdownMenuItem className="gap-2">
+                            <DropdownMenuItem 
+                              className="gap-2"
+                              onClick={() => handleViewResults(job.id)}
+                            >
                               <Eye className="h-4 w-4" />
-                              View Details
+                              View Results
                             </DropdownMenuItem>
                             {job.status === "running" && (
                               <DropdownMenuItem 
@@ -232,4 +260,4 @@ export const JobsTable = () => {
       </CardContent>
     </Card>
   );
-};
+});
