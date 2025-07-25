@@ -2,41 +2,65 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
+/* Azure Portal-inspired Design System for LinkedIn Integration Tool 
+All colors MUST be HSL for consistency and theme support.
 */
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Azure Portal Background System */
+    --background: 0 0% 98%;
+    --foreground: 213 16% 16%;
 
+    /* Card System - Professional elevated surfaces */
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 213 16% 16%;
+    --card-border: 210 12% 92%;
 
+    /* Popover System */
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 213 16% 16%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    /* Azure Blue Primary System */
+    --primary: 207 100% 42%;  /* Azure Blue #0078d4 */
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 207 100% 38%;
+    --primary-subtle: 207 100% 96%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    /* Secondary System - Neutral grays */
+    --secondary: 210 12% 96%;
+    --secondary-foreground: 213 16% 16%;
+    --secondary-hover: 210 12% 92%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    /* Muted System - Subtle backgrounds */
+    --muted: 210 12% 96%;
+    --muted-foreground: 213 9% 51%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    /* Accent System - Supporting blues */
+    --accent: 207 44% 94%;
+    --accent-foreground: 207 100% 28%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    /* Status Colors - Enterprise feedback */
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+    --success-subtle: 142 52% 96%;
+    
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    --warning-subtle: 38 100% 96%;
+    
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --destructive-subtle: 0 86% 97%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    /* Border and Input System */
+    --border: 210 12% 88%;
+    --input: 210 12% 92%;
+    --input-border: 210 12% 85%;
+    --ring: 207 100% 42%;
 
-    --radius: 0.5rem;
+    /* Enterprise spacing and sizing */
+    --radius: 4px;
 
     --sidebar-background: 0 0% 98%;
 
