@@ -25,8 +25,11 @@ import {
   RefreshCw,
   Eye,
   Loader2,
+  Monitor,
+  Smartphone,
 } from "lucide-react";
 import { useJobs, type Job } from "@/hooks/useJobs";
+import { JobCard } from "./JobCard";
 
 export const JobsTable = () => {
   const { jobs, loading, manageJob, exportResults } = useJobs();
@@ -85,124 +88,146 @@ export const JobsTable = () => {
         </div>
       </CardHeader>
       <CardContent>
-{jobs.length > 0 && (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Job Name</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Progress</TableHead>
-                <TableHead>URLs</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead>Duration</TableHead>
-                <TableHead className="w-[50px]"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {jobs.map((job) => (
-                <TableRow key={job.id}>
-                  <TableCell>
-                    <div>
-                      <p className="font-medium text-foreground">{job.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {job.description || `ID: ${job.id.slice(0, 8)}`}
-                      </p>
-                    </div>
-                  </TableCell>
-                  <TableCell>{getStatusBadge(job.status)}</TableCell>
-                  <TableCell>
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-muted-foreground">{job.progress}%</span>
-                        <span className="text-muted-foreground">
-                          {job.processed_urls}/{job.total_urls}
+        {jobs.length > 0 && (
+          <>
+            {/* Desktop Table View */}
+            <div className="hidden lg:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Job Name</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Progress</TableHead>
+                    <TableHead>URLs</TableHead>
+                    <TableHead>Created</TableHead>
+                    <TableHead>Duration</TableHead>
+                    <TableHead className="w-[50px]" aria-label="Actions"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {jobs.map((job) => (
+                    <TableRow key={job.id}>
+                      <TableCell>
+                        <div>
+                          <p className="font-medium text-foreground">{job.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {job.description || `ID: ${job.id.slice(0, 8)}`}
+                          </p>
+                        </div>
+                      </TableCell>
+                      <TableCell>{getStatusBadge(job.status)}</TableCell>
+                      <TableCell>
+                        <div className="space-y-1" role="progressbar" aria-valuenow={job.progress} aria-valuemin={0} aria-valuemax={100}>
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-muted-foreground">{job.progress}%</span>
+                            <span className="text-muted-foreground">
+                              {job.processed_urls}/{job.total_urls}
+                            </span>
+                          </div>
+                          <Progress value={job.progress} className="h-2" />
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm">
+                          <p className="font-medium">{job.total_urls.toLocaleString()}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {job.processed_urls.toLocaleString()} processed
+                          </p>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-sm text-muted-foreground">
+                          {formatDate(job.created_at)}
                         </span>
-                      </div>
-                      <Progress value={job.progress} className="h-2" />
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="text-sm">
-                      <p className="font-medium">{job.total_urls.toLocaleString()}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {job.processed_urls.toLocaleString()} processed
-                      </p>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-sm text-muted-foreground">
-                      {formatDate(job.created_at)}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-sm text-muted-foreground">
-                      {job.duration || "—"}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem className="gap-2">
-                          <Eye className="h-4 w-4" />
-                          View Details
-                        </DropdownMenuItem>
-                        {job.status === "running" && (
-                          <DropdownMenuItem 
-                            className="gap-2"
-                            onClick={() => manageJob(job.id, 'pause')}
-                          >
-                            <Pause className="h-4 w-4" />
-                            Pause Job
-                          </DropdownMenuItem>
-                        )}
-                        {job.status === "paused" && (
-                          <DropdownMenuItem 
-                            className="gap-2"
-                            onClick={() => manageJob(job.id, 'resume')}
-                          >
-                            <Play className="h-4 w-4" />
-                            Resume Job
-                          </DropdownMenuItem>
-                        )}
-                        {job.status === "failed" && (
-                          <DropdownMenuItem 
-                            className="gap-2"
-                            onClick={() => manageJob(job.id, 'retry')}
-                          >
-                            <RefreshCw className="h-4 w-4" />
-                            Retry Job
-                          </DropdownMenuItem>
-                        )}
-                        {job.status === "completed" && (
-                          <DropdownMenuItem 
-                            className="gap-2"
-                            onClick={() => exportResults(job.id)}
-                          >
-                            <Download className="h-4 w-4" />
-                            Download Results
-                          </DropdownMenuItem>
-                        )}
-                        {["running", "paused", "queued"].includes(job.status) && (
-                          <DropdownMenuItem 
-                            className="gap-2 text-destructive"
-                            onClick={() => manageJob(job.id, 'cancel')}
-                          >
-                            <Square className="h-4 w-4" />
-                            Cancel Job
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-sm text-muted-foreground">
+                          {job.duration || "—"}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8"
+                              aria-label={`Actions for ${job.name}`}
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="bg-background border border-border">
+                            <DropdownMenuItem className="gap-2">
+                              <Eye className="h-4 w-4" />
+                              View Details
+                            </DropdownMenuItem>
+                            {job.status === "running" && (
+                              <DropdownMenuItem 
+                                className="gap-2"
+                                onClick={() => manageJob(job.id, 'pause')}
+                              >
+                                <Pause className="h-4 w-4" />
+                                Pause Job
+                              </DropdownMenuItem>
+                            )}
+                            {job.status === "paused" && (
+                              <DropdownMenuItem 
+                                className="gap-2"
+                                onClick={() => manageJob(job.id, 'resume')}
+                              >
+                                <Play className="h-4 w-4" />
+                                Resume Job
+                              </DropdownMenuItem>
+                            )}
+                            {job.status === "failed" && (
+                              <DropdownMenuItem 
+                                className="gap-2"
+                                onClick={() => manageJob(job.id, 'retry')}
+                              >
+                                <RefreshCw className="h-4 w-4" />
+                                Retry Job
+                              </DropdownMenuItem>
+                            )}
+                            {job.status === "completed" && (
+                              <DropdownMenuItem 
+                                className="gap-2"
+                                onClick={() => exportResults(job.id)}
+                              >
+                                <Download className="h-4 w-4" />
+                                Download Results
+                              </DropdownMenuItem>
+                            )}
+                            {["running", "paused", "queued"].includes(job.status) && (
+                              <DropdownMenuItem 
+                                className="gap-2 text-destructive"
+                                onClick={() => manageJob(job.id, 'cancel')}
+                              >
+                                <Square className="h-4 w-4" />
+                                Cancel Job
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* Mobile Card View */}
+            <div className="lg:hidden space-y-4">
+              {jobs.map((job) => (
+                <JobCard
+                  key={job.id}
+                  job={job}
+                  onManageJob={manageJob}
+                  onExportResults={exportResults}
+                />
               ))}
-            </TableBody>
-          </Table>
+            </div>
+          </>
         )}
       </CardContent>
     </Card>

@@ -7,6 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useFileUpload } from "@/hooks/useFileUpload";
 import { useJobs } from "@/hooks/useJobs";
+import { useToast } from "@/hooks/use-toast";
+import { createJobSchema, fileUploadSchema, validateInput } from "@/lib/validation";
+import { formatErrorMessage } from "@/lib/error-handling";
 import {
   Upload,
   FileSpreadsheet,
@@ -21,27 +24,66 @@ export const FileUpload = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
   const [jobName, setJobName] = useState("");
+  const [isCreatingJob, setIsCreatingJob] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const { uploadedFiles, uploadFile, removeFile } = useFileUpload();
   const { createJob } = useJobs();
+  const { toast } = useToast();
 
   const handleFileSelect = async (files: FileList | null) => {
     if (!files) return;
 
     for (const file of Array.from(files)) {
-      await uploadFile(file);
+      try {
+        // Validate file before upload
+        validateInput(fileUploadSchema, {
+          file,
+          size: file.size,
+          type: file.type,
+        });
+        
+        await uploadFile(file);
+      } catch (error) {
+        toast({
+          title: "File validation failed",
+          description: formatErrorMessage(error),
+          variant: "destructive",
+        });
+      }
     }
   };
 
   const handleCreateJob = async () => {
     if (!selectedFileId || !jobName.trim()) return;
 
-    const success = await createJob(selectedFileId, jobName.trim());
-    if (success) {
-      setDialogOpen(false);
-      setJobName("");
-      setSelectedFileId(null);
+    try {
+      setIsCreatingJob(true);
+      
+      // Validate input
+      const validatedData = validateInput(createJobSchema, {
+        fileId: selectedFileId,
+        jobName: jobName.trim(),
+      });
+
+      const success = await createJob(validatedData.fileId, validatedData.jobName);
+      if (success) {
+        setDialogOpen(false);
+        setJobName("");
+        setSelectedFileId(null);
+        toast({
+          title: "Job created successfully",
+          description: "Your extraction job has been queued for processing.",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Failed to create job",
+        description: formatErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setIsCreatingJob(false);
     }
   };
 
@@ -108,7 +150,12 @@ export const FileUpload = () => {
               accept=".xlsx,.xls"
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
               onChange={(e) => handleFileSelect(e.target.files)}
+              aria-label="Upload Excel files"
+              aria-describedby="file-upload-description"
             />
+            <div id="file-upload-description" className="sr-only">
+              Upload Excel files containing LinkedIn URLs. Maximum file size: 50MB.
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -126,7 +173,7 @@ export const FileUpload = () => {
               {uploadedFiles.map((uploadFile) => (
                 <div
                   key={uploadFile.id}
-                  className="flex items-center gap-3 p-3 bg-muted rounded-lg"
+                  className="flex flex-col sm:flex-row sm:items-center gap-3 p-3 bg-muted rounded-lg"
                 >
                   <div className="flex-shrink-0">
                     {uploadFile.status === "success" ? (
@@ -148,27 +195,29 @@ export const FileUpload = () => {
                       <Progress value={uploadFile.progress} className="mt-2" />
                     )}
                   </div>
-                  <div className="flex gap-2">
-                    {uploadFile.status === "success" && uploadFile.fileId && (
-                      <Button
-                        variant="azure"
-                        size="sm"
-                        onClick={() => startJobCreation(uploadFile.fileId!)}
-                        className="gap-2 h-8"
-                      >
-                        <Plus className="h-3 w-3" />
-                        Create Job
-                      </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => removeFile(uploadFile.id)}
-                      className="h-8 w-8"
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
+                   <div className="flex flex-col sm:flex-row gap-2">
+                     {uploadFile.status === "success" && uploadFile.fileId && (
+                       <Button
+                         variant="azure"
+                         size="sm"
+                         onClick={() => startJobCreation(uploadFile.fileId!)}
+                         className="gap-2 h-8 w-full sm:w-auto"
+                         aria-label={`Create job for ${uploadFile.file.name}`}
+                       >
+                         <Plus className="h-3 w-3" />
+                         <span className="sm:inline">Create Job</span>
+                       </Button>
+                     )}
+                     <Button
+                       variant="ghost"
+                       size="icon"
+                       onClick={() => removeFile(uploadFile.id)}
+                       className="h-8 w-8"
+                       aria-label={`Remove ${uploadFile.file.name}`}
+                     >
+                       <X className="h-4 w-4" />
+                     </Button>
+                   </div>
                 </div>
               ))}
             </div>
@@ -201,9 +250,10 @@ export const FileUpload = () => {
               </Button>
               <Button
                 onClick={handleCreateJob}
-                disabled={!jobName.trim()}
+                disabled={!jobName.trim() || isCreatingJob}
+                aria-label="Create extraction job"
               >
-                Create Job
+                {isCreatingJob ? "Creating..." : "Create Job"}
               </Button>
             </div>
           </div>
