@@ -11,3 +11,12 @@ verify_jwt = true
 
 [functions.export-results]
 verify_jwt = true
+
+[functions.linkedin-scraper]
+verify_jwt = true
+
+[functions.ai-enhancer]
+verify_jwt = true
+
+[functions.proxy-manager]
+verify_jwt = true
