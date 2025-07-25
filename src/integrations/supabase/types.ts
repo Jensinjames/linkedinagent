@@ -47,8 +47,65 @@ export type Database = {
         }
         Relationships: []
       }
+      job_processing_logs: {
+        Row: {
+          created_at: string | null
+          data_quality_score: number | null
+          error_message: string | null
+          id: string
+          job_id: string
+          linkedin_url: string
+          metadata: Json | null
+          processing_stage: string
+          processing_time_ms: number | null
+          proxy_used: string | null
+          retry_count: number | null
+          status: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          data_quality_score?: number | null
+          error_message?: string | null
+          id?: string
+          job_id: string
+          linkedin_url: string
+          metadata?: Json | null
+          processing_stage: string
+          processing_time_ms?: number | null
+          proxy_used?: string | null
+          retry_count?: number | null
+          status?: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          data_quality_score?: number | null
+          error_message?: string | null
+          id?: string
+          job_id?: string
+          linkedin_url?: string
+          metadata?: Json | null
+          processing_stage?: string
+          processing_time_ms?: number | null
+          proxy_used?: string | null
+          retry_count?: number | null
+          status?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_processing_logs_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       jobs: {
         Row: {
+          ai_enhancement_enabled: boolean | null
           completed_at: string | null
           created_at: string | null
           description: string | null
@@ -59,7 +116,10 @@ export type Database = {
           name: string
           output_file_id: string | null
           processed_urls: number
+          processing_strategy: Json | null
           progress: number
+          proxy_usage_stats: Json | null
+          quality_metrics: Json | null
           retry_count: number | null
           settings: Json | null
           started_at: string | null
@@ -69,6 +129,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          ai_enhancement_enabled?: boolean | null
           completed_at?: string | null
           created_at?: string | null
           description?: string | null
@@ -79,7 +140,10 @@ export type Database = {
           name: string
           output_file_id?: string | null
           processed_urls?: number
+          processing_strategy?: Json | null
           progress?: number
+          proxy_usage_stats?: Json | null
+          quality_metrics?: Json | null
           retry_count?: number | null
           settings?: Json | null
           started_at?: string | null
@@ -89,6 +153,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          ai_enhancement_enabled?: boolean | null
           completed_at?: string | null
           created_at?: string | null
           description?: string | null
@@ -99,7 +164,10 @@ export type Database = {
           name?: string
           output_file_id?: string | null
           processed_urls?: number
+          processing_strategy?: Json | null
           progress?: number
+          proxy_usage_stats?: Json | null
+          quality_metrics?: Json | null
           retry_count?: number | null
           settings?: Json | null
           started_at?: string | null
@@ -148,41 +216,59 @@ export type Database = {
       }
       proxy_configs: {
         Row: {
+          avg_response_time: number | null
           created_at: string | null
+          failed_requests: number | null
+          health_check_status: string | null
           host: string
           id: string
           is_active: boolean | null
+          last_error_message: string | null
           last_used_at: string | null
           name: string
           password: string | null
           port: number
           success_rate: number | null
+          successful_requests: number | null
+          total_requests: number | null
           user_id: string
           username: string | null
         }
         Insert: {
+          avg_response_time?: number | null
           created_at?: string | null
+          failed_requests?: number | null
+          health_check_status?: string | null
           host: string
           id?: string
           is_active?: boolean | null
+          last_error_message?: string | null
           last_used_at?: string | null
           name: string
           password?: string | null
           port: number
           success_rate?: number | null
+          successful_requests?: number | null
+          total_requests?: number | null
           user_id: string
           username?: string | null
         }
         Update: {
+          avg_response_time?: number | null
           created_at?: string | null
+          failed_requests?: number | null
+          health_check_status?: string | null
           host?: string
           id?: string
           is_active?: boolean | null
+          last_error_message?: string | null
           last_used_at?: string | null
           name?: string
           password?: string | null
           port?: number
           success_rate?: number | null
+          successful_requests?: number | null
+          total_requests?: number | null
           user_id?: string
           username?: string | null
         }
@@ -190,32 +276,41 @@ export type Database = {
       }
       scraped_profiles: {
         Row: {
+          ai_enhanced_data: Json | null
           created_at: string | null
           error_message: string | null
           id: string
           job_id: string
           linkedin_url: string
+          processing_metadata: Json | null
           profile_data: Json | null
+          quality_score: number | null
           scraped_at: string | null
           status: string
         }
         Insert: {
+          ai_enhanced_data?: Json | null
           created_at?: string | null
           error_message?: string | null
           id?: string
           job_id: string
           linkedin_url: string
+          processing_metadata?: Json | null
           profile_data?: Json | null
+          quality_score?: number | null
           scraped_at?: string | null
           status?: string
         }
         Update: {
+          ai_enhanced_data?: Json | null
           created_at?: string | null
           error_message?: string | null
           id?: string
           job_id?: string
           linkedin_url?: string
+          processing_metadata?: Json | null
           profile_data?: Json | null
+          quality_score?: number | null
           scraped_at?: string | null
           status?: string
         }
@@ -254,6 +349,10 @@ export type Database = {
     Functions: {
       authenticate_user: {
         Args: { email: string; password: string }
+        Returns: Json
+      }
+      calculate_job_quality_metrics: {
+        Args: { job_id_param: string }
         Returns: Json
       }
       cancel_job: {
