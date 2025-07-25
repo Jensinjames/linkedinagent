@@ -2,95 +2,52 @@ import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { useToast } from "@/hooks/use-toast";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useFileUpload } from "@/hooks/useFileUpload";
+import { useJobs } from "@/hooks/useJobs";
 import {
   Upload,
   FileSpreadsheet,
   CheckCircle,
   AlertCircle,
   X,
+  Plus,
 } from "lucide-react";
 
-interface UploadedFile {
-  file: File;
-  status: "uploading" | "success" | "error";
-  progress: number;
-  id: string;
-}
-
 export const FileUpload = () => {
-  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
+  const [jobName, setJobName] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { toast } = useToast();
+  
+  const { uploadedFiles, uploadFile, removeFile } = useFileUpload();
+  const { createJob } = useJobs();
 
-  const handleFileSelect = (files: FileList | null) => {
+  const handleFileSelect = async (files: FileList | null) => {
     if (!files) return;
 
-    const validFiles = Array.from(files).filter((file) => {
-      const isValidType = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
-      const isValidSize = file.size <= 50 * 1024 * 1024; // 50MB
-
-      if (!isValidType) {
-        toast({
-          title: "Invalid file type",
-          description: `${file.name} is not a valid Excel file`,
-          variant: "destructive",
-        });
-        return false;
-      }
-
-      if (!isValidSize) {
-        toast({
-          title: "File too large",
-          description: `${file.name} exceeds 50MB limit`,
-          variant: "destructive",
-        });
-        return false;
-      }
-
-      return true;
-    });
-
-    validFiles.forEach((file) => {
-      const fileId = Math.random().toString(36).substr(2, 9);
-      const uploadFile: UploadedFile = {
-        file,
-        status: "uploading",
-        progress: 0,
-        id: fileId,
-      };
-
-      setUploadedFiles((prev) => [...prev, uploadFile]);
-
-      // Simulate upload progress
-      const interval = setInterval(() => {
-        setUploadedFiles((prev) =>
-          prev.map((f) =>
-            f.id === fileId
-              ? {
-                  ...f,
-                  progress: Math.min(f.progress + 10, 100),
-                  status: f.progress >= 90 ? "success" : "uploading",
-                }
-              : f
-          )
-        );
-      }, 200);
-
-      setTimeout(() => {
-        clearInterval(interval);
-        setUploadedFiles((prev) =>
-          prev.map((f) =>
-            f.id === fileId ? { ...f, status: "success", progress: 100 } : f
-          )
-        );
-      }, 2000);
-    });
+    for (const file of Array.from(files)) {
+      await uploadFile(file);
+    }
   };
 
-  const removeFile = (fileId: string) => {
-    setUploadedFiles((prev) => prev.filter((f) => f.id !== fileId));
+  const handleCreateJob = async () => {
+    if (!selectedFileId || !jobName.trim()) return;
+
+    const success = await createJob(selectedFileId, jobName.trim());
+    if (success) {
+      setDialogOpen(false);
+      setJobName("");
+      setSelectedFileId(null);
+    }
+  };
+
+  const startJobCreation = (fileId: string) => {
+    setSelectedFileId(fileId);
+    setDialogOpen(true);
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -191,20 +148,67 @@ export const FileUpload = () => {
                       <Progress value={uploadFile.progress} className="mt-2" />
                     )}
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => removeFile(uploadFile.id)}
-                    className="h-8 w-8"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
+                  <div className="flex gap-2">
+                    {uploadFile.status === "success" && uploadFile.fileId && (
+                      <Button
+                        variant="azure"
+                        size="sm"
+                        onClick={() => startJobCreation(uploadFile.fileId!)}
+                        className="gap-2 h-8"
+                      >
+                        <Plus className="h-3 w-3" />
+                        Create Job
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeFile(uploadFile.id)}
+                      className="h-8 w-8"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
           </CardContent>
         </Card>
       )}
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Extraction Job</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="jobName">Job Name</Label>
+              <Input
+                id="jobName"
+                value={jobName}
+                onChange={(e) => setJobName(e.target.value)}
+                placeholder="Enter a name for this job..."
+                className="mt-1"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleCreateJob}
+                disabled={!jobName.trim()}
+              >
+                Create Job
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

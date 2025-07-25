@@ -1,1 +1,13 @@
 project_id = "wzykadjddlkodxbntmza"
+
+[functions.upload-file]
+verify_jwt = true
+
+[functions.process-file]
+verify_jwt = true
+
+[functions.manage-job]
+verify_jwt = true
+
+[functions.export-results]
+verify_jwt = true
