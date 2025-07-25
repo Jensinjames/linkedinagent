@@ -6,6 +6,28 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Rate limiting configuration
+const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
+const MAX_REQUESTS_PER_WINDOW = 20;
+const userRequests = new Map<string, { count: number; resetTime: number }>();
+
+function checkRateLimit(identifier: string): { allowed: boolean; resetTime?: number } {
+  const now = Date.now();
+  const userLimit = userRequests.get(identifier);
+  
+  if (!userLimit || now > userLimit.resetTime) {
+    userRequests.set(identifier, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
+    return { allowed: true };
+  }
+  
+  if (userLimit.count >= MAX_REQUESTS_PER_WINDOW) {
+    return { allowed: false, resetTime: userLimit.resetTime };
+  }
+  
+  userLimit.count++;
+  return { allowed: true };
+}
+
 // Performance optimizations
 const CONNECTION_POOL = new Map<string, any>();
 const MAX_CONCURRENT_SCRAPES = 5;
@@ -82,6 +104,23 @@ serve(async (req) => {
 
   try {
     const { url, urls, batchMode = false } = await req.json();
+
+    // Check rate limit using IP as identifier for scraper function
+    const clientIP = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown';
+    const rateLimitCheck = checkRateLimit(clientIP);
+    if (!rateLimitCheck.allowed) {
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: 'Rate limit exceeded. Please try again later.',
+          resetTime: rateLimitCheck.resetTime 
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 429,
+        }
+      );
+    }
     
     if (!url && !batchMode) {
       return new Response(

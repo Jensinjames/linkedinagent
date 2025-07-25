@@ -86,7 +86,9 @@ export const Sidebar = ({ activeTab, onTabChange }: SidebarProps) => {
           variant="ghost"
           size="icon"
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="h-8 w-8"
+          className="h-8 w-8 focus:ring-2 focus:ring-primary focus:ring-offset-2"
+          aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-expanded={!isCollapsed}
         >
           {isCollapsed ? <ChevronRight /> : <ChevronLeft />}
         </Button>
@@ -104,13 +106,15 @@ export const Sidebar = ({ activeTab, onTabChange }: SidebarProps) => {
                 key={item.id}
                 variant={isActive ? "secondary" : "ghost"}
                 className={cn(
-                  "w-full justify-start gap-3 h-10",
+                  "w-full justify-start gap-3 h-10 focus:ring-2 focus:ring-primary focus:ring-offset-2",
                   isCollapsed && "px-2",
                   isActive && "bg-primary-subtle text-primary border border-primary/20"
                 )}
                 onClick={() => onTabChange(item.id)}
+                aria-label={`Navigate to ${item.label}: ${item.description}`}
+                aria-current={isActive ? "page" : undefined}
               >
-                <Icon className="h-4 w-4" />
+                <Icon className="h-4 w-4" aria-hidden="true" />
                 {!isCollapsed && (
                   <div className="text-left">
                     <div className="text-sm font-medium">{item.label}</div>
@@ -146,9 +150,10 @@ export const Sidebar = ({ activeTab, onTabChange }: SidebarProps) => {
           <Button
             variant="ghost"
             onClick={signOut}
-            className="w-full justify-start gap-3 h-10 text-muted-foreground hover:text-foreground"
+            className="w-full justify-start gap-3 h-10 text-muted-foreground hover:text-foreground focus:ring-2 focus:ring-primary focus:ring-offset-2"
+            aria-label="Sign out of your account"
           >
-            <LogOut className="h-4 w-4" />
+            <LogOut className="h-4 w-4" aria-hidden="true" />
             Sign Out
           </Button>
         )}

@@ -7,6 +7,28 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Rate limiting configuration
+const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
+const MAX_REQUESTS_PER_WINDOW = 10;
+const userRequests = new Map<string, { count: number; resetTime: number }>();
+
+function checkRateLimit(userId: string): { allowed: boolean; resetTime?: number } {
+  const now = Date.now();
+  const userLimit = userRequests.get(userId);
+  
+  if (!userLimit || now > userLimit.resetTime) {
+    userRequests.set(userId, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
+    return { allowed: true };
+  }
+  
+  if (userLimit.count >= MAX_REQUESTS_PER_WINDOW) {
+    return { allowed: false, resetTime: userLimit.resetTime };
+  }
+  
+  userLimit.count++;
+  return { allowed: true };
+}
+
 interface Database {
   public: {
     Tables: {
@@ -56,6 +78,22 @@ serve(async (req) => {
     
     if (authError || !user) {
       throw new Error('Unauthorized');
+    }
+
+    // Check rate limit
+    const rateLimitCheck = checkRateLimit(user.id);
+    if (!rateLimitCheck.allowed) {
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: 'Rate limit exceeded. Please try again later.',
+          resetTime: rateLimitCheck.resetTime 
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 429,
+        }
+      );
     }
 
     const formData = await req.formData();

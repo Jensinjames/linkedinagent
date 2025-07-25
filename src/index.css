@@ -126,4 +126,59 @@ All colors MUST be HSL for consistency and theme support.
   body {
     @apply bg-background text-foreground;
   }
+
+  /* Enhanced focus indicators for accessibility */
+  *:focus-visible {
+    outline: 2px solid hsl(var(--primary));
+    outline-offset: 2px;
+    box-shadow: 0 0 0 2px hsl(var(--background)), 0 0 0 4px hsl(var(--primary));
+  }
+
+  /* Skip link for screen readers */
+  .skip-link {
+    position: absolute;
+    top: -40px;
+    left: 6px;
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    padding: 8px;
+    z-index: 1000;
+    text-decoration: none;
+    border-radius: 4px;
+  }
+
+  .skip-link:focus {
+    top: 6px;
+  }
+
+  /* Enhanced keyboard navigation for dropdowns */
+  [role="menu"] [role="menuitem"]:focus,
+  [role="listbox"] [role="option"]:focus {
+    background-color: hsl(var(--accent));
+    color: hsl(var(--accent-foreground));
+    outline: none;
+  }
+
+  /* Focus trap indicator */
+  .focus-trap {
+    position: relative;
+  }
+
+  .focus-trap::before {
+    content: '';
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    right: -2px;
+    bottom: -2px;
+    border: 2px solid hsl(var(--primary));
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+
+  .focus-trap:focus-within::before {
+    opacity: 1;
+  }
 }
