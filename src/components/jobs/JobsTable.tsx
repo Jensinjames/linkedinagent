@@ -142,7 +142,13 @@ export const JobsTable = memo(() => {
                       </TableCell>
                       <TableCell>{getStatusBadge(job.status)}</TableCell>
                       <TableCell>
-                        <div className="space-y-1" role="progressbar" aria-valuenow={job.progress} aria-valuemin={0} aria-valuemax={100}>
+                        <div
+                          className="space-y-1"
+                          role="progressbar"
+                          aria-valuenow={typeof job.progress === "number" ? job.progress : undefined}
+                          aria-valuemin={typeof job.progress === "number" ? 0 : undefined}
+                          aria-valuemax={100}
+                        >
                           <div className="flex items-center justify-between text-xs">
                             <span className="text-muted-foreground">{job.progress}%</span>
                             <span className="text-muted-foreground">

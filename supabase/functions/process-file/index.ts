@@ -36,8 +36,8 @@ serve(async (req) => {
 
   try {
     const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      (typeof Deno !== "undefined" && Deno.env.get('SUPABASE_URL')) || '',
+      (typeof Deno !== "undefined" && Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')) || ''
     );
 
     const authHeader = req.headers.get('Authorization');
@@ -127,7 +127,7 @@ serve(async (req) => {
     }
 
     // Start processing job asynchronously
-    EdgeRuntime.waitUntil(processJobUrls(job.id, urls, supabase));
+    ctx.waitUntil(processJobUrls(job.id, urls, supabase));
 
     return new Response(
       JSON.stringify({ 
@@ -158,7 +158,8 @@ serve(async (req) => {
 async function parseExcelFile(arrayBuffer: ArrayBuffer): Promise<string[]> {
   try {
     // Import xlsx dynamically
-    const XLSX = await import('https://esm.sh/xlsx@latest');
+    // @ts-ignore
+    const XLSX = await import('xlsx');
     
     const workbook = XLSX.read(arrayBuffer, { type: 'array' });
     const worksheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -277,8 +278,8 @@ async function scrapeLinkedInProfile(url: string): Promise<any> {
   try {
     // Call the linkedin-scraper function for actual scraping
     const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      process.env.SUPABASE_URL ?? '',
+      process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
     );
 
     const { data: scrapedData, error } = await supabase.functions.invoke('linkedin-scraper', {
