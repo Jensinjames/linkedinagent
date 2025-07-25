@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/useAuth";
 import {
   FileSpreadsheet,
   BarChart3,
@@ -10,6 +11,7 @@ import {
   ChevronRight,
   User,
   Briefcase,
+  LogOut,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -19,6 +21,7 @@ interface SidebarProps {
 
 export const Sidebar = ({ activeTab, onTabChange }: SidebarProps) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const { user, signOut } = useAuth();
 
   const menuItems = [
     {
@@ -125,18 +128,30 @@ export const Sidebar = ({ activeTab, onTabChange }: SidebarProps) => {
       </nav>
 
       {/* User Section */}
-      <div className="p-2 border-t border-card-border">
+      <div className="p-2 border-t border-card-border space-y-2">
         <div className="flex items-center gap-3 p-2 rounded bg-muted">
           <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center">
             <User className="h-4 w-4 text-primary-foreground" />
           </div>
           {!isCollapsed && (
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground truncate">Demo User</p>
-              <p className="text-xs text-muted-foreground truncate">demo@company.com</p>
+              <p className="text-sm font-medium text-foreground truncate">
+                {user?.user_metadata?.first_name || "User"}
+              </p>
+              <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
             </div>
           )}
         </div>
+        {!isCollapsed && (
+          <Button
+            variant="ghost"
+            onClick={signOut}
+            className="w-full justify-start gap-3 h-10 text-muted-foreground hover:text-foreground"
+          >
+            <LogOut className="h-4 w-4" />
+            Sign Out
+          </Button>
+        )}
       </div>
     </div>
   );

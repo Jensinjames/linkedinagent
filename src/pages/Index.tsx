@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { StatsCards } from "@/components/dashboard/StatsCards";
 import { FileUpload } from "@/components/upload/FileUpload";
@@ -94,14 +95,16 @@ const Index = () => {
   };
 
   return (
-    <div className="flex h-screen bg-background">
-      <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
-      <main className="flex-1 overflow-auto">
-        <div className="p-6 max-w-7xl mx-auto">
-          {renderContent()}
-        </div>
-      </main>
-    </div>
+    <ProtectedRoute>
+      <div className="flex h-screen bg-background">
+        <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
+        <main className="flex-1 overflow-auto">
+          <div className="p-6 max-w-7xl mx-auto">
+            {renderContent()}
+          </div>
+        </main>
+      </div>
+    </ProtectedRoute>
   );
 };
 
