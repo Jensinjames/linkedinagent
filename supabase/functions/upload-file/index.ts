@@ -70,12 +70,15 @@ serve(async (req) => {
 
         const authHeader = req.headers.get('Authorization');
         if (authHeader) {
+            console.log('Processing file upload request with auth header');
             const {data: {user}, error: authError} = await supabase.auth.getUser(
                 authHeader.replace('Bearer ', '')
             );
             if (authError || !user) {
+                console.error('Authentication failed:', authError);
                 throw new Error('Unauthorized');
             }
+            console.log('User authenticated:', user.id);
             const rateLimitCheck = checkRateLimit(user.id);
             if (!rateLimitCheck.allowed) {
                 return new Response(
@@ -93,17 +96,24 @@ serve(async (req) => {
             const formData = await req.formData();
             const file = formData.get('file') as File;
             if (!file) {
+                console.error('No file provided in form data');
                 throw new Error('No file provided');
             }
+            console.log('File received:', { name: file.name, size: file.size, type: file.type });
+            
             if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+                console.error('Invalid file type:', file.name);
                 throw new Error('Invalid file type. Only Excel files are allowed.');
             }
             if (file.size > 50 * 1024 * 1024) {
+                console.error('File size too large:', file.size);
                 throw new Error('File size exceeds 50MB limit');
             }
             const fileExt = file.name.split('.').pop();
             const fileName = `${crypto.randomUUID()}.${fileExt}`;
             const filePath = `uploads/${user.id}/${fileName}`;
+            console.log('Uploading file to storage:', filePath);
+            
             const {error: uploadError} = await supabase.storage
                 .from('uploads')
                 .upload(filePath, file);
@@ -111,6 +121,8 @@ serve(async (req) => {
                 console.error('Storage upload error:', uploadError);
                 throw new Error('Failed to upload file to storage');
             }
+            console.log('File uploaded to storage successfully');
+            console.log('Creating database record for file upload');
             const {data: fileRecord, error: dbError} = await supabase
                 .from('file_uploads')
                 .insert({
@@ -129,6 +141,8 @@ serve(async (req) => {
                 await supabase.storage.from('uploads').remove([filePath]);
                 throw new Error('Failed to record file upload');
             }
+            console.log('Database record created successfully:', fileRecord.id);
+            console.log('Upload completed successfully for file:', fileRecord.filename);
             return new Response(
                 JSON.stringify({
                     success: true,
@@ -141,6 +155,7 @@ serve(async (req) => {
                 }
             );
         } else {
+            console.error('No authorization header provided');
             throw new Error('No authorization header');
         }
     } catch (error) {

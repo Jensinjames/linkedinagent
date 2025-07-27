@@ -24,46 +24,52 @@ export interface CreateFileUploadRequest {
 export class FileApi {
   async uploadFile(file: File, userId: string): Promise<{ data?: { fileId: string; path: string }; error?: string }> {
     try {
-      const fileName = `${userId}/${Date.now()}-${file.name}`;
+      console.log('Starting file upload:', { fileName: file.name, fileSize: file.size, userId });
       
-      // Upload file to storage
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('uploads')
-        .upload(fileName, file);
+      // Create FormData for the edge function
+      const formData = new FormData();
+      formData.append('file', file);
 
-      if (uploadError) {
-        return { error: uploadError.message };
+      // Get the current session for authentication
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        console.error('No auth session found');
+        return { error: 'Authentication required. Please log in again.' };
       }
 
-      // Create file record in database
-      const fileRecord: CreateFileUploadRequest = {
-        filename: file.name,
-        file_type: file.type,
-        file_size: file.size,
-        storage_path: uploadData.path,
-        user_id: userId,
-        upload_status: 'completed'
-      };
+      console.log('Calling upload-file edge function');
+      
+      // Call the upload-file edge function
+      const { data, error } = await supabase.functions.invoke('upload-file', {
+        body: formData,
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
 
-      const { data: dbData, error: dbError } = await supabase
-        .from('file_uploads')
-        .insert(fileRecord)
-        .select()
-        .single();
+      console.log('Edge function response:', { data, error });
 
-      if (dbError) {
-        // Clean up uploaded file if database insert fails
-        await supabase.storage.from('uploads').remove([uploadData.path]);
-        return { error: dbError.message };
+      if (error) {
+        console.error('Edge function error:', error);
+        return { error: error.message || 'Upload failed' };
       }
+
+      if (!data?.success) {
+        console.error('Upload failed:', data?.error);
+        return { error: data?.error || 'Upload failed' };
+      }
+
+      console.log('Upload successful:', { fileId: data.fileId, filename: data.filename });
 
       return {
         data: {
-          fileId: dbData.id,
-          path: uploadData.path
+          fileId: data.fileId,
+          path: data.filename
         }
       };
     } catch (error) {
+      console.error('Upload error:', error);
       return { error: formatErrorMessage(error) };
     }
   }

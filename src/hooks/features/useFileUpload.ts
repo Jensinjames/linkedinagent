@@ -85,15 +85,8 @@ export const useFileUpload = () => {
     isUploading: uploadMutation.isPending,
     formatFileSize: fileService.formatFileSize.bind(fileService),
     getFileTypeIcon: fileService.getFileTypeIcon.bind(fileService),
-    // Legacy compatibility
-    uploadedFiles: uploadProgress.fileId ? [{
-      id: uploadProgress.fileId,
-      file: null as any,
-      status: uploadProgress.status === 'success' ? 'success' : 
-              uploadProgress.status === 'error' ? 'error' : 'uploading',
-      progress: uploadProgress.progress,
-      fileId: uploadProgress.fileId
-    }] : [],
+    // Legacy compatibility for existing components
+    uploadedFiles: [],
     removeFile: (fileId: string) => resetUpload(),
   };
 };
