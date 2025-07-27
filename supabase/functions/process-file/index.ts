@@ -1,6 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import * as XLSX from 'npm:xlsx@0.18.5';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -127,7 +128,11 @@ serve(async (req) => {
     }
 
     // Start processing job asynchronously
-    ctx.waitUntil(processJobUrls(job.id, urls, supabase));
+    const processingPromise = processJobUrls(job.id, urls, supabase);
+    // Process in background without blocking the response
+    processingPromise.catch(error => {
+      console.error('Background processing error:', error);
+    });
 
     return new Response(
       JSON.stringify({ 
@@ -157,10 +162,7 @@ serve(async (req) => {
 
 async function parseExcelFile(arrayBuffer: ArrayBuffer): Promise<string[]> {
   try {
-    // Import xlsx dynamically
-    // @ts-ignore
-    const XLSX = await import('xlsx');
-    
+    console.log('Parsing Excel file...');
     const workbook = XLSX.read(arrayBuffer, { type: 'array' });
     const worksheet = workbook.Sheets[workbook.SheetNames[0]];
     const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
@@ -271,15 +273,15 @@ async function processJobUrls(jobId: string, urls: string[], supabase: any) {
   }
 }
 
-// Advanced LinkedIn profile scraping with Playwright and AI enhancement
+// Advanced LinkedIn profile scraping with AI enhancement
 async function scrapeLinkedInProfile(url: string): Promise<any> {
   console.log(`Scraping profile: ${url}`);
   
   try {
     // Call the linkedin-scraper function for actual scraping
     const supabase = createClient(
-      process.env.SUPABASE_URL ?? '',
-      process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
     const { data: scrapedData, error } = await supabase.functions.invoke('linkedin-scraper', {
