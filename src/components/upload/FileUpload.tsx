@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useFileUpload } from "@/hooks/useFileUpload";
@@ -229,6 +229,9 @@ export const FileUpload = () => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create Extraction Job</DialogTitle>
+            <DialogDescription>
+              Give your LinkedIn profile extraction job a descriptive name to help you identify it later.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>

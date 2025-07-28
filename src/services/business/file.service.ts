@@ -7,7 +7,7 @@ export interface FileValidationResult {
 }
 
 export class FileService {
-  private readonly MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+  private readonly MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
   private readonly ALLOWED_TYPES = [
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
     'application/vnd.ms-excel', // .xls

@@ -1,2 +1,5 @@
-// Re-export the new file upload hook
-export { useFileUpload, type UploadProgress } from './features/useFileUpload';
+// Re-export the legacy file upload hook for compatibility with existing components
+export {
+    useFileUploadLegacy as useFileUpload,
+    type UploadedFile
+} from './features/useFileUploadLegacy';

@@ -92,7 +92,7 @@ export class JobApi {
     }
   }
 
-  async createJob(jobData: CreateJobRequest): Promise<{ data?: Job; error?: string }> {
+  protected async createJob(jobData: CreateJobRequest): Promise<{ data?: Job; error?: string }> {
     try {
       const { data, error } = await supabase
         .from('jobs')
@@ -110,20 +110,20 @@ export class JobApi {
     }
   }
 
-  async updateJob(id: string, updates: UpdateJobRequest): Promise<{ data?: Job; error?: string }> {
+  protected async updateJob(id: string, updates: UpdateJobRequest): Promise<{ data?: Job; error?: string }> {
     try {
-      const { data, error } = await supabase
-        .from('jobs')
-        .update({ ...updates, updated_at: new Date().toISOString() })
-        .eq('id', id)
-        .select()
-        .single();
+      const [updateResponse] = await Promise.all([supabase
+          .from('jobs')
+          .update({...updates, updated_at: new Date().toISOString()})
+          .eq('id', id)
+          .select()
+          .single()]);
 
-      if (error) {
-        return { error: error.message };
+      if (updateResponse.error) {
+        return { error: updateResponse.error.message };
       }
 
-      return { data: data as Job };
+      return { data: updateResponse.data as Job };
     } catch (error) {
       return { error: formatErrorMessage(error) };
     }

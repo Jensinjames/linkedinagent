@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      edge_function_logs: {
+        Row: {
+          created_at: string
+          deployment_id: string
+          error_details: Json | null
+          event_message: string | null
+          execution_time_ms: number
+          function_id: string
+          id: string
+          method: string
+          status_code: number
+          timestamp: string
+          version: string
+        }
+        Insert: {
+          created_at?: string
+          deployment_id: string
+          error_details?: Json | null
+          event_message?: string | null
+          execution_time_ms: number
+          function_id: string
+          id?: string
+          method: string
+          status_code: number
+          timestamp: string
+          version: string
+        }
+        Update: {
+          created_at?: string
+          deployment_id?: string
+          error_details?: Json | null
+          event_message?: string | null
+          execution_time_ms?: number
+          function_id?: string
+          id?: string
+          method?: string
+          status_code?: number
+          timestamp?: string
+          version?: string
+        }
+        Relationships: []
+      }
       file_uploads: {
         Row: {
           created_at: string | null
@@ -44,6 +86,54 @@ export type Database = {
           storage_path?: string
           upload_status?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      function_logs: {
+        Row: {
+          created_at: string | null
+          details: Json | null
+          function_name: string
+          id: string
+          message: string
+        }
+        Insert: {
+          created_at?: string | null
+          details?: Json | null
+          function_name: string
+          id?: string
+          message: string
+        }
+        Update: {
+          created_at?: string | null
+          details?: Json | null
+          function_name?: string
+          id?: string
+          message?: string
+        }
+        Relationships: []
+      }
+      job_logs: {
+        Row: {
+          created_at: string | null
+          details: Json | null
+          id: string
+          job_id: string
+          message: string
+        }
+        Insert: {
+          created_at?: string | null
+          details?: Json | null
+          id?: string
+          job_id: string
+          message: string
+        }
+        Update: {
+          created_at?: string | null
+          details?: Json | null
+          id?: string
+          job_id?: string
+          message?: string
         }
         Relationships: []
       }
@@ -344,7 +434,22 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      edge_function_analytics: {
+        Row: {
+          avg_execution_time_ms: number | null
+          error_calls: number | null
+          error_rate_percent: number | null
+          function_id: string | null
+          max_execution_time_ms: number | null
+          min_execution_time_ms: number | null
+          p95_execution_time_ms: number | null
+          slow_calls: number | null
+          success_rate_percent: number | null
+          successful_calls: number | null
+          total_calls: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       authenticate_user: {
@@ -359,12 +464,31 @@ export type Database = {
         Args: { job_id: string }
         Returns: Json
       }
+      check_dead_tuples: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          table_name: string
+          row_count: number
+          dead_tuples: number
+          dead_tuple_percentage: number
+        }[]
+      }
       create_job: {
         Args: {
           title: string
           description: string
           tenant_id: string
           file_ids?: string[]
+        }
+        Returns: Json
+      }
+      create_scraped_profile: {
+        Args: {
+          job_id: string
+          linkedin_url: string
+          status?: string
+          profile_data?: Json
+          error_message?: string
         }
         Returns: Json
       }
@@ -376,8 +500,16 @@ export type Database = {
         Args: { job_id: string }
         Returns: Json
       }
+      get_job_with_profiles: {
+        Args: { job_id: string; user_id?: string }
+        Returns: Json
+      }
       get_jobs: {
         Args: { status?: string; page?: number; page_size?: number }
+        Returns: Json
+      }
+      get_proxy_configs: {
+        Args: { is_active?: boolean }
         Returns: Json
       }
       get_stats: {
@@ -386,6 +518,34 @@ export type Database = {
       }
       get_tenants: {
         Args: Record<PropertyKey, never>
+        Returns: Json
+      }
+      log_edge_function_event: {
+        Args: {
+          p_function_id: string
+          p_deployment_id: string
+          p_version: string
+          p_method: string
+          p_status_code: number
+          p_execution_time_ms: number
+          p_event_message: string
+          p_error_details?: Json
+          p_timestamp?: string
+        }
+        Returns: string
+      }
+      pg_ping: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
+      update_job: {
+        Args: {
+          job_id: string
+          status?: string
+          title?: string
+          description?: string
+          metadata?: Json
+        }
         Returns: Json
       }
     }
