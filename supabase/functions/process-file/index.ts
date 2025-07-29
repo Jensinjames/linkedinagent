@@ -3,6 +3,10 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import * as XLSX from 'npm:xlsx@0.18.5';
 
+// Memory and file size limits
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB limit
+const MEMORY_CHECK_INTERVAL = 100; // Check memory every 100 rows
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -97,9 +101,16 @@ serve(async (req) => {
       throw new Error('Failed to download file');
     }
 
-    // Parse Excel file to extract LinkedIn URLs
+    // Check file size before processing
+    if (fileBlob.size > MAX_FILE_SIZE) {
+      throw new Error(`File size (${Math.round(fileBlob.size / 1024 / 1024)}MB) exceeds maximum limit of ${MAX_FILE_SIZE / 1024 / 1024}MB`);
+    }
+
+    console.log(`Processing file: ${fileData.filename} (${Math.round(fileBlob.size / 1024)}KB)`);
+
+    // Parse Excel file to extract LinkedIn URLs with memory optimization
     const arrayBuffer = await fileBlob.arrayBuffer();
-    const urls = await parseExcelFile(arrayBuffer);
+    const urls = await parseExcelFileOptimized(arrayBuffer, jobName, supabase, user.id);
     
     if (urls.length === 0) {
       throw new Error('No LinkedIn URLs found in the file');
@@ -127,12 +138,18 @@ serve(async (req) => {
       throw new Error('Failed to create job');
     }
 
-    // Start processing job asynchronously
+    // Start processing job asynchronously using background tasks
     const processingPromise = processJobUrls(job.id, urls, supabase);
-    // Process in background without blocking the response
-    processingPromise.catch(error => {
-      console.error('Background processing error:', error);
-    });
+    
+    // Use EdgeRuntime.waitUntil to ensure background task completes
+    if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime.waitUntil) {
+      EdgeRuntime.waitUntil(processingPromise);
+    } else {
+      // Fallback for environments without EdgeRuntime
+      processingPromise.catch(error => {
+        console.error('Background processing error:', error);
+      });
+    }
 
     return new Response(
       JSON.stringify({ 
@@ -160,37 +177,115 @@ serve(async (req) => {
   }
 });
 
-async function parseExcelFile(arrayBuffer: ArrayBuffer): Promise<string[]> {
+// Memory-optimized Excel parsing with streaming and progress tracking
+async function parseExcelFileOptimized(
+  arrayBuffer: ArrayBuffer, 
+  jobName: string, 
+  supabase: any, 
+  userId: string
+): Promise<string[]> {
   try {
-    console.log('Parsing Excel file...');
-    const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+    console.log('Starting memory-optimized Excel parsing...');
+    const startTime = Date.now();
+    
+    // Read workbook with minimal options for memory efficiency
+    const workbook = XLSX.read(arrayBuffer, { 
+      type: 'array',
+      cellDates: false,
+      cellNF: false,
+      cellStyles: false
+    });
+    
+    if (!workbook.SheetNames.length) {
+      throw new Error('No sheets found in Excel file');
+    }
+    
     const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-    const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+    const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
     
-    const urls: string[] = [];
-    const linkedinRegex = /linkedin\.com\/in\/[^\s,\)]+/gi;
+    console.log(`Processing sheet with ${range.e.r + 1} rows and ${range.e.c + 1} columns`);
     
-    for (const row of data as any[][]) {
-      for (const cell of row) {
-        if (typeof cell === 'string') {
-          const matches = cell.match(linkedinRegex);
+    const urls = new Set<string>(); // Use Set for deduplication
+    const linkedinRegex = /https?:\/\/(www\.)?linkedin\.com\/in\/[a-zA-Z0-9\-_%]+\/?/gi;
+    let processedRows = 0;
+    
+    // Process rows in chunks to avoid memory issues
+    for (let row = range.s.r; row <= range.e.r; row++) {
+      // Memory check every MEMORY_CHECK_INTERVAL rows
+      if (processedRows % MEMORY_CHECK_INTERVAL === 0 && processedRows > 0) {
+        console.log(`Processed ${processedRows} rows, found ${urls.size} unique LinkedIn URLs`);
+        
+        // Force garbage collection hint (if available)
+        if (typeof globalThis.gc === 'function') {
+          globalThis.gc();
+        }
+        
+        // Small delay to prevent blocking
+        await new Promise(resolve => setTimeout(resolve, 1));
+      }
+      
+      // Process each cell in the row
+      for (let col = range.s.c; col <= range.e.c; col++) {
+        const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+        const cell = worksheet[cellAddress];
+        
+        if (cell && cell.v && typeof cell.v === 'string') {
+          const cellValue = cell.v.toString();
+          const matches = cellValue.match(linkedinRegex);
+          
           if (matches) {
             matches.forEach(match => {
-              const cleanUrl = match.replace(/[,\)]+$/, '');
-              if (!urls.includes(cleanUrl)) {
-                urls.push(cleanUrl);
+              // Clean up URL
+              let cleanUrl = match.replace(/[,\)\s]+$/, '');
+              
+              // Ensure URL starts with https://
+              if (!cleanUrl.startsWith('https://')) {
+                cleanUrl = cleanUrl.replace(/^https?:\/\//, 'https://');
+              }
+              
+              // Ensure it's a valid LinkedIn profile URL
+              if (cleanUrl.includes('/in/') && cleanUrl.length > 30) {
+                urls.add(cleanUrl);
               }
             });
           }
         }
       }
+      
+      processedRows++;
     }
     
-    return urls;
+    const urlArray = Array.from(urls);
+    const processingTime = Date.now() - startTime;
+    
+    console.log(`Excel parsing completed in ${processingTime}ms`);
+    console.log(`Found ${urlArray.length} unique LinkedIn URLs from ${processedRows} rows`);
+    
+    // Log memory usage if available
+    if (typeof Deno !== 'undefined' && Deno.memoryUsage) {
+      const memUsage = Deno.memoryUsage();
+      console.log(`Memory usage: ${Math.round(memUsage.rss / 1024 / 1024)}MB RSS, ${Math.round(memUsage.heapUsed / 1024 / 1024)}MB heap`);
+    }
+    
+    return urlArray;
   } catch (error) {
-    console.error('Error parsing Excel file:', error);
-    throw new Error('Failed to parse Excel file');
+    console.error('Error in optimized Excel parsing:', error);
+    
+    // Provide specific error messages for common issues
+    if (error.message?.includes('Cannot read property')) {
+      throw new Error('Invalid Excel file format or corrupted file');
+    } else if (error.message?.includes('out of memory')) {
+      throw new Error('File too large to process. Please use a smaller file (max 10MB)');
+    } else {
+      throw new Error(`Failed to parse Excel file: ${error.message}`);
+    }
   }
+}
+
+// Legacy function kept for compatibility (not used)
+async function parseExcelFile(arrayBuffer: ArrayBuffer): Promise<string[]> {
+  console.warn('Using legacy parseExcelFile - consider using parseExcelFileOptimized');
+  return parseExcelFileOptimized(arrayBuffer, 'legacy', null, 'system');
 }
 
 async function processJobUrls(jobId: string, urls: string[], supabase: any) {
